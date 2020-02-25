@@ -1,13 +1,12 @@
-import wave
 import os
-import librosa
-import matplotlib.pyplot as plt
-import numpy as np
 import scipy.io.wavfile as wav
-import scipy.signal as sig
+import librosa
+import numpy as np
 import soundfile
-from pydub import AudioSegment
-import os, wave, math, collections
+from pydub import AudioSegment, silence
+from pydub.silence import detect_silence
+from train_tuples import Trainer
+import pathlib
 
 
 def convert_24_to_16_bits(file1, file2):
@@ -17,7 +16,6 @@ def convert_24_to_16_bits(file1, file2):
 
     data, samplerate = soundfile.read(file2)
     soundfile.write('CMA-002 Lav-Khaki-16.wav', data, samplerate, subtype='PCM_16')
-
 
 
 # Split the wav file from t1 to t2 seconds
@@ -76,8 +74,17 @@ def convert_24_to_16_bits(file1, file2):
 #
 #
 
+def find_silence(wav1):
+    myaudio = intro = AudioSegment.from_wav(wav1)
+
+    silence = detect_silence(myaudio, min_silence_len=200, silence_thresh=-25)
+
+    silence = [((start / 1000), (stop / 1000)) for start, stop in silence]  # convert to sec
+    print(silence)
+
+
 # Mixes 2 .wav files
-def mixture2(wav1, wav2):
+def mixture2(wav1, wav2, dest):
     d, samplerate = soundfile.read(wav1)
     soundfile.write(wav1, d, samplerate, subtype='PCM_16')
     d, samplerate = soundfile.read(wav2)
@@ -88,7 +95,8 @@ def mixture2(wav1, wav2):
 
     combined = sound1.overlay(sound2)
 
-    combined.export("mixture.wav", format='wav')
+    combined.export(dest, format='wav')
+
 
 # Make the 2 input .wav files the same length
 def make_same_length(wav1, wav2):
@@ -102,8 +110,9 @@ def make_same_length(wav1, wav2):
         librosa.output.write_wav(wav1, y, sr)
     return [wav1, wav2]
 
+
 # Splits the .wav file in split_length in several chunks. Every chunk is split_length seconds
-def split_wav(wav_file, split_length):
+def split_wav(wav_file, split_length, target_location):
     t1 = 0 * 1000  # Works in milliseconds
     t2 = split_length * 1000
     newAudio = AudioSegment.from_wav(wav_file)
@@ -111,19 +120,92 @@ def split_wav(wav_file, split_length):
     i = 0
     for i in range(int(newAudio.duration_seconds / split_length)):
         tmp = newAudio[t1:t2]
-        tmp.export(f"Mixtures/{outfile}{i}.wav", format="wav")  # Exports to a wav file in the current path.
+        tmp.export(f"{target_location}/{outfile}{i}.wav", format="wav")  # Exports to a wav file in the current path.
         t1 += split_length * 1000
         t2 += split_length * 1000
 
 
+# Creates a ndarray filter mask from a time series.
+# sr, x is what is returned from wav.read(filename.wav)
+# sr: sampling rate (int), x: time series (nd.array)
+def mask_from_timeseries(sr, x):
+    x = x.astype('float')
+    S, ph = librosa.magphase(librosa.stft(x))
+    # i'm not sure what the value of "time" should be. 0.1 works well for segment lengths of 0.5 seconds.
+    time = 0.1
+    S_filter = librosa.decompose.nn_filter(S,
+                                           aggregate=np.median,
+                                           metric='cosine',
+                                           width=int(librosa.time_to_frames(time, sr=sr)))
+    S_filter = np.minimum(S, S_filter)
+    margin = 5
+    power = 2
+    mask = librosa.util.softmask(S - S_filter,
+                                 margin * S_filter,
+                                 power=power)
+    return mask
+
+
+# diretory is the directory where all the samples is located
+def getMasks(directory):
+    masks = []
+    for file in os.listdir(directory):
+        filename = os.fsdecode(file)
+        if filename.endswith(".wav"):
+            # print(filename)
+            sr, x = wav.read(directory + "/" + filename)
+            masks.append(mask_from_timeseries(sr, x))
+        else:
+            continue
+    return masks
+
+
+# diretory is the directory where all the samples is located
+def getSpectogram(directory):
+    spect = []
+    for file in os.listdir(directory):
+        filename = os.fsdecode(file)
+        if filename.endswith(".wav"):
+            sr, x = wav.read(directory + "/" + filename)
+            x = x.astype('float')
+            S, ph = librosa.magphase(librosa.stft(x))
+            spect.append(S)
+        else:
+            continue
+    return spect
+
+masks1 = getMasks("TEST/y1_A_clean")
+masks2 = getMasks("TEST/y2_B_clean")
+spectoA = getSpectogram("TEST/y1_A_y2_A_MIX")
+spectoB = getSpectogram("TEST/y1_B_y2_B_MIX")
+
+list_of_object = []
+for i, j, k, l in zip(masks1, masks2, spectoA, spectoB):
+    list_of_object.append(Trainer(i, j, k, l))
+
+spectos = []
+for i in list_of_object:
+    for j in i.spec1:
+        print(j)
+# (MASK1, SPEC1, MASK2, SPEC2)
+
 # directory = "mics"
 # split_wav(directory, 0.5)
-infiles = make_same_length("mics/clean_mic1/out1.wav", "mics/clean_mic2/out2.wav")
-mixture2("mics/clean_mic1/out1.wav", "mics/clean_mic2/out2.wav")
-split_wav("mixture.wav", 0.5)
+# infiles = make_same_length("mics/clean_mic1/out1.wav", "mics/clean_mic2/out2.wav")
+# infiles = make_same_length("TEST/y1_A.wav", "TEST/y2_A.wav", )
+# infiles = make_same_length("TEST/y1_B.wav", "TEST/y2_B.wav")
+mixture2("TEST/y1_A.wav", "TEST/y2_A.wav", "TEST/y1_A_y2_A.wav")
+mixture2("TEST/y1_B.wav", "TEST/y2_B.wav", "TEST/y1_B_y2_B.wav")
+split_wav("TEST/y1_A.wav", 0.5, "TEST/y1_A_clean")
+split_wav("TEST/y2_B.wav", 0.5, "TEST/y2_B_clean")
+# mixture2("TEST/y2_A.wav", "TEST/y2_B.wav")
+# find_silence("TEST/y1_A.wav")
+# split_wav("mixture.wav", 0.5, "Mixtures")
+# split_wav("mics/clean_mic1/out1.wav", 0.5, "mics/clean_mic1/Clean_1")
+# split_wav("mics/clean_mic2/out2.wav", 0.5, "mics/clean_mic2/Clean_2")
 # Splitting wav file on silence
 
-#Split on silence (run in terminal)
+# Split on silence (run in terminal)
 # sox -V3 CMA-002\ Lav-K-16.wav out.wav silence 1 0.5 0.1% 1 0.5 0.1% : newfile : restart
 
 # Remove all silence (run in terminal)
