@@ -1,4 +1,13 @@
 # Written by Jonas Eriksson, 25/2-20
+import os
+import scipy.io.wavfile as wav
+import scipy.signal as sig
+import numpy as np
+import soundfile as sf
+import matplotlib.pyplot as plt
+import librosa
+
+
 # Creates a ndarray filter mask from a time series.
 # sr, x is what is returned from wav.read(filename.wav)
 # sr: sampling rate (int), x: time series (nd.array)
@@ -18,3 +27,14 @@ def mask_from_timeseries(sr, x):
                                 margin * S_filter,
                                 power=power)
     return mask
+
+directory = os.fsencode("/home/jonas/Documents/Kurser/Master/Talteknologi (DT2112)/Project_local")
+
+for file in os.listdir(directory):
+    filename = os.fsdecode(file)
+    if filename.endswith(".wav"): 
+        #print(os.path.join(directory, filename))
+        sr, x = wav.read(filename) 
+        mask = mask_from_timeseries(sr, x)
+    else:
+        continue
