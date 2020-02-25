@@ -180,7 +180,7 @@ spectoA = getSpectogram("TEST/y1_A_y2_A_MIX")
 spectoB = getSpectogram("TEST/y1_B_y2_B_MIX")
 
 list_of_object = []
-for i, j, k, l in zip(masks1, masks2, spectoA, spectoB):
+for i, j, k, l in zip(masks1, spectoA, masks2, spectoB):
     list_of_object.append(Trainer(i, j, k, l))
 
 # (MASK1, SPEC1, MASK2, SPEC2)
