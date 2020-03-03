@@ -11,6 +11,7 @@ This is a project in the course DT2112 - Speech Technology.
   - [ ] model no 2
  
 3. Method
+  - [ ] Data 
   - [ ] Preprocessing part 
   - [ ] Different parameters on models? 
  
